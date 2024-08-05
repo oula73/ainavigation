@@ -5,13 +5,15 @@ Affiliation: OSX
 from __future__ import annotations
 
 import os
-
+import sys
 import hydra
 import pytorch_lightning as pl
 import torch
-from neural_astar.planner import NeuralAstar
-from neural_astar.utils.data import create_warcraft_dataloader
-from neural_astar.utils.training import PlannerModule, set_global_seeds
+
+sys.path.append(r"./src")
+from module import NeuralAstar
+from data_utils.warcraft_data import create_warcraft_dataloader
+from train_utils.training import PlannerModule, set_global_seeds
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 

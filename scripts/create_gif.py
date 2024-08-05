@@ -1,10 +1,13 @@
 import os
-
+import sys
 import hydra
 import moviepy.editor as mpy
-from neural_astar.planner import NeuralAstar, VanillaAstar
-from neural_astar.utils.data import create_dataloader, visualize_results
-from neural_astar.utils.training import load_from_ptl_checkpoint
+
+sys.path.append(r"./src")
+from module import NeuralAstar, VanillaAstar
+from data_utils.visualize import visualize_results
+from data_utils.maze_data import create_dataloader
+from train_utils.training import load_from_ptl_checkpoint
 
 
 @hydra.main(config_path="config", config_name="create_gif")

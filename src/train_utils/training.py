@@ -14,7 +14,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim
-from neural_astar.planner.astar import VanillaAstar
+from module.astar import VanillaAstar
 
 
 def load_from_ptl_checkpoint(checkpoint_path: str) -> dict:
