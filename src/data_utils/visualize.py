@@ -6,6 +6,7 @@ import torch.utils.data as data
 from module.differentiable_astar import AstarOutput
 from PIL import Image
 from torchvision.utils import make_grid
+from scipy.stats import multivariate_normal
 
 
 def visualize_results(
