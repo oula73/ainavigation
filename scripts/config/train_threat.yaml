@@ -1,5 +1,5 @@
 seed: 1234
-dataset: "Unkonwn"
+dataset: "experiment-datasets/data/mpd_with_threat/*"
 logdir: "model"
 Tmax: 0.25
 
@@ -10,10 +10,21 @@ encoder:
 
 params:
   batch_size: 100
-  num_epochs: 50
+  num_epochs: 200
   lr: 0.001
 
 
 hydra:
   job:
     chdir: False
+
+
+astar:
+  g_choice: "net-output"            # "net-output"/"zero"/"one"
+  h_choice: "mix"            # "dist"/"net-output"/"zero"/"mix"
+
+
+
+
+# h_choice == "mix"  chebyshev dist + net_output
+# You cannot have such a combination： "net-output" + ["dist", "zero"]
