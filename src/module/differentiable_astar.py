@@ -22,34 +22,66 @@ class AstarOutput(NamedTuple):
     paths: torch.tensor
     intermediate_results: Optional[List[dict]] = None
 
+def get_delta_g(cost_maps: torch.tensor, choice: str = "net-output") -> torch.tensor:
+    """
+    Get accumulating cost rule
 
-def get_heuristic(goal_maps: torch.tensor, tb_factor: float = 0.001) -> torch.tensor:
+    Args:
+        cost_maps (torch.tensor) : output from model
+        choice (str) :
+            "zero" : g = 0
+            "one" : each step takes 1 cost
+            "net-output" : each step cost determined by model
+
+    Returns:
+        torch.tensor: delta_g on each node
+    """
+    if choice == "net-output":
+        return cost_maps
+    elif choice == "zero":
+        return torch.zeros_like(cost_maps)
+    else:
+        return torch.ones_like(cost_maps)
+
+def get_heuristic(goal_maps: torch.tensor, net_output: torch.tensor, tb_factor: float = 0.001, choice: str = "dist") -> torch.tensor:
     """
     Get heuristic function for A* search (chebyshev + small const * euclidean)
 
     Args:
         goal_maps (torch.tensor): one-hot matrices of goal locations
         tb_factor (float, optional): small constant weight for tie-breaking. Defaults to 0.001.
+        choice (str) : same as get_accumulating_rule
+            "zero" : h = 0
+            "net-output" : determined by model
+            "dist" : chebyshev + small * euclidean
 
     Returns:
         torch.tensor: heuristic function matrices
     """
 
-    # some preprocessings to deal with mini-batches
-    num_samples, H, W = goal_maps.shape[0], goal_maps.shape[-2], goal_maps.shape[-1]
-    grid = torch.meshgrid(torch.arange(0, H), torch.arange(0, W))
-    loc = torch.stack(grid, dim=0).type_as(goal_maps)
-    loc_expand = loc.reshape(2, -1).unsqueeze(0).expand(num_samples, 2, -1)
-    goal_loc = torch.einsum("kij, bij -> bk", loc, goal_maps)
-    goal_loc_expand = goal_loc.unsqueeze(-1).expand(num_samples, 2, -1)
+    if choice == "zero":
+        return torch.zeros_like(goal_maps)
+    elif choice == "net-output":
+        return net_output
+    else:
+        # some preprocessings to deal with mini-batches
+        num_samples, H, W = goal_maps.shape[0], goal_maps.shape[-2], goal_maps.shape[-1]
+        grid = torch.meshgrid(torch.arange(0, H), torch.arange(0, W))
+        loc = torch.stack(grid, dim=0).type_as(goal_maps)
+        loc_expand = loc.reshape(2, -1).unsqueeze(0).expand(num_samples, 2, -1)
+        goal_loc = torch.einsum("kij, bij -> bk", loc, goal_maps)
+        goal_loc_expand = goal_loc.unsqueeze(-1).expand(num_samples, 2, -1)
 
-    # chebyshev distance
-    dxdy = torch.abs(loc_expand - goal_loc_expand)
-    h = dxdy.sum(dim=1) - dxdy.min(dim=1)[0]
-    euc = torch.sqrt(((loc_expand - goal_loc_expand) ** 2).sum(1))
-    h = (h + tb_factor * euc).reshape_as(goal_maps)
+        # chebyshev distance
+        dxdy = torch.abs(loc_expand - goal_loc_expand)
+        h = dxdy.sum(dim=1) - dxdy.min(dim=1)[0]
+        euc = torch.sqrt(((loc_expand - goal_loc_expand) ** 2).sum(1))
+        h = (h + tb_factor * euc).reshape_as(goal_maps)
 
-    return h
+        if choice == "dist":
+            return h
+        else:
+            return h + net_output.reshape_as(goal_maps)
 
 
 def _st_softmax_noexp(val: torch.tensor) -> torch.tensor:
@@ -126,13 +158,15 @@ def backtrack(
 
 
 class DifferentiableAstar(nn.Module):
-    def __init__(self, g_ratio: float = 0.5, Tmax: float = 1.0):
+    def __init__(self, g_ratio: float = 0.5, Tmax: float = 1.0, g_choice: str = "net-output", h_choice: str = "dist"):
         """
         Differentiable A* module
 
         Args:
             g_ratio (float, optional): ratio between g(v) + h(v). Set 0 to perform as best-first search. Defaults to 0.5.
             Tmax (float, optional): how much of the map the planner explores during training. Defaults to 1.0.
+            g_choice (str, optional): rule to choose delta_g
+            h_choice (str, optional): rule to choose heuristic
         """
 
         super().__init__()
@@ -142,6 +176,11 @@ class DifferentiableAstar(nn.Module):
 
         self.neighbor_filter = nn.Parameter(neighbor_filter, requires_grad=False)
         self.get_heuristic = get_heuristic
+        self.get_delta_g = get_delta_g
+        assert(g_choice in ["net-output", "zero", "one"])
+        assert(h_choice in ["dist", "net-output", "zero", "mix"])
+        self.g_choice = g_choice
+        self.h_choice = h_choice
 
         self.g_ratio = g_ratio
         assert (Tmax > 0) & (Tmax <= 1), "Tmax must be within (0, 1]"
@@ -152,6 +191,7 @@ class DifferentiableAstar(nn.Module):
         cost_maps: torch.tensor,
         start_maps: torch.tensor,
         goal_maps: torch.tensor,
+        heuristic_maps: torch.tensor,
         obstacles_maps: torch.tensor,
         store_intermediate_results: bool = False,
     ) -> AstarOutput:
@@ -188,9 +228,9 @@ class DifferentiableAstar(nn.Module):
         histories = torch.zeros_like(start_maps)
         intermediate_results = []
 
-        h = self.get_heuristic(goal_maps)
-        h = h + cost_maps
+        h = self.get_heuristic(goal_maps, heuristic_maps, choice=self.h_choice)
         g = torch.zeros_like(start_maps)
+        delta_g = self.get_delta_g(cost_maps, self.g_choice)
 
         parents = (
             torch.ones_like(start_maps).reshape(num_samples, -1)
@@ -231,7 +271,7 @@ class DifferentiableAstar(nn.Module):
             # update g if one of the following conditions is met
             # 1) neighbor is not in the close list (1 - histories) nor in the open list (1 - open_maps)
             # 2) neighbor is in the open list but g < g2
-            g2 = expand((g + cost_maps) * selected_node_maps, neighbor_filter)
+            g2 = expand((g + delta_g) * selected_node_maps, neighbor_filter)
             idx = (1 - open_maps) * (1 - histories) + open_maps * (g > g2)
             idx = idx * neighbor_nodes
             idx = idx.detach()

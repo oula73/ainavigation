@@ -8,6 +8,7 @@ from functools import partial
 
 import torch
 import torch.nn as nn
+import time
 
 from . import encoder
 from .differentiable_astar import AstarOutput, DifferentiableAstar
@@ -19,6 +20,8 @@ class VanillaAstar(nn.Module):
         self,
         g_ratio: float = 0.5,
         use_differentiable_astar: bool = True,
+        g_chocie: str = "net-output",
+        h_chocie: str = "dist",
     ):
         """
         Vanilla A* search
@@ -41,6 +44,8 @@ class VanillaAstar(nn.Module):
         self.astar = DifferentiableAstar(
             g_ratio=g_ratio,
             Tmax=1.0,
+            g_choice=g_chocie,
+            h_choice=h_chocie,
         )
         self.g_ratio = g_ratio
         self.use_differentiable_astar = use_differentiable_astar
@@ -50,6 +55,7 @@ class VanillaAstar(nn.Module):
         map_designs: torch.tensor,
         start_maps: torch.tensor,
         goal_maps: torch.tensor,
+        heuristic_maps: torch.tensor,
         obstacles_maps: torch.tensor,
         store_intermediate_results: bool = False,
     ) -> AstarOutput:
@@ -64,6 +70,7 @@ class VanillaAstar(nn.Module):
             map_designs,
             start_maps,
             goal_maps,
+            heuristic_maps,
             obstacles_maps,
             store_intermediate_results,
         )
@@ -75,6 +82,7 @@ class VanillaAstar(nn.Module):
         map_designs: torch.tensor,
         start_maps: torch.tensor,
         goal_maps: torch.tensor,
+        heuristic_maps: torch.tensor,
         store_intermediate_results: bool = False,
     ) -> AstarOutput:
         """
@@ -97,6 +105,7 @@ class VanillaAstar(nn.Module):
             cost_maps,
             start_maps,
             goal_maps,
+            heuristic_maps,
             obstacles_maps,
             store_intermediate_results,
         )
@@ -110,6 +119,8 @@ class NeuralAstar(VanillaAstar):
         encoder_input: str = "m+",
         encoder_arch: str = "CNN",
         encoder_depth: int = 4,
+        g_choice: str = "net-output",
+        h_choice: str = "dist",
         learn_obstacles: bool = False,
         const: float = None,
         use_differentiable_astar: bool = True,
@@ -141,10 +152,12 @@ class NeuralAstar(VanillaAstar):
         self.astar = DifferentiableAstar(
             g_ratio=g_ratio,
             Tmax=Tmax,
+            g_choice=g_choice,
+            h_choice=h_choice,
         )
         self.encoder_input = encoder_input
         encoder_arch = getattr(encoder, encoder_arch)
-        self.encoder = encoder_arch(len(self.encoder_input), encoder_depth, const)
+        self.encoder = encoder_arch(len(self.encoder_input) + 1, encoder_depth, const)
         self.learn_obstacles = learn_obstacles
         if self.learn_obstacles:
             print("WARNING: learn_obstacles has been set to True")
@@ -156,6 +169,7 @@ class NeuralAstar(VanillaAstar):
         map_designs: torch.tensor,
         start_maps: torch.tensor,
         goal_maps: torch.tensor,
+        threat_maps: torch.tensor,
     ) -> torch.tensor:
         """
         Encode the input problem
@@ -168,7 +182,7 @@ class NeuralAstar(VanillaAstar):
         Returns:
             torch.tensor: predicted cost maps
         """
-        inputs = map_designs
+        inputs = torch.cat((map_designs, threat_maps), dim=1)
         if "+" in self.encoder_input:
             if map_designs.shape[-1] == start_maps.shape[-1]:
                 inputs = torch.cat((inputs, start_maps + goal_maps), dim=1)
@@ -176,6 +190,7 @@ class NeuralAstar(VanillaAstar):
                 upsampler = nn.UpsamplingNearest2d(map_designs.shape[-2:])
                 inputs = torch.cat((inputs, upsampler(start_maps + goal_maps)), dim=1)
         cost_maps = self.encoder(inputs)
+            
 
         return cost_maps
 
@@ -184,9 +199,10 @@ class NeuralAstar(VanillaAstar):
         map_designs: torch.tensor,
         start_maps: torch.tensor,
         goal_maps: torch.tensor,
+        threat_maps: torch.tensor = None,
         store_intermediate_results: bool = False,
     ) -> AstarOutput:
-        """
+        """`
         Perform neural A* search
 
         Args:
@@ -199,15 +215,22 @@ class NeuralAstar(VanillaAstar):
             AstarOutput: search histories and solution paths, and optionally intermediate search results.
         """
 
-        cost_maps = self.encode(map_designs, start_maps, goal_maps)
+        if threat_maps is None:
+            threat_maps = torch.zeros_like(map_designs)
+        cost_maps = self.encode(map_designs, start_maps, goal_maps, threat_maps)
         obstacles_maps = (
             map_designs if not self.learn_obstacles else torch.ones_like(start_maps)
         )
+
+        #place holder : heuristic_maps = model_xxx()
+        heuristic_maps = cost_maps
 
         return self.perform_astar(
             cost_maps,
             start_maps,
             goal_maps,
+            heuristic_maps,
             obstacles_maps,
             store_intermediate_results,
         )
+
