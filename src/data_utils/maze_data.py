@@ -9,6 +9,7 @@ import numpy as np
 import torch
 import torch.utils.data as data
 from PIL import Image
+from glob import glob
 
 def create_dataloader(
     filename: str,
@@ -84,13 +85,25 @@ class MazeDataset(data.Dataset):
         self.num_orient = self.opt_policies.shape[2]
 
     def _process(self, filename: str):
-        with np.load(filename) as f:
-            dataset2idx = {"train": 0, "valid": 4, "test": 8}
-            idx = dataset2idx[self.dataset_type]
-            map_designs = f["arr_" + str(idx)]
-            goal_maps = f["arr_" + str(idx + 1)]
-            opt_policies = f["arr_" + str(idx + 2)]
-            opt_dists = f["arr_" + str(idx + 3)]
+        file_paths = glob(filename)
+        map_designs_list = []
+        goal_maps_list = []
+        threat_maps_list = []
+        opt_policies_list = []
+        opt_dists_list = []
+        dataset2idx = {"train": 0, "valid": 4, "test": 8}
+        idx = dataset2idx[self.dataset_type]
+        for path in file_paths:
+            with np.load(path) as f:
+                map_designs_list.append(f["arr_" + str(idx)])
+                goal_maps_list.append(f["arr_" + str(idx + 1)])
+                opt_policies_list.append(f["arr_" + str(idx + 2)])
+                opt_dists_list.append(f["arr_" + str(idx + 3)])
+
+        map_designs = np.concatenate(map_designs_list, axis=0).astype(np.float32)
+        goal_maps = np.concatenate(goal_maps_list, axis=0).astype(np.float32)
+        opt_policies = np.concatenate(opt_policies_list, axis=0).astype(np.float32)
+        opt_dists = np.concatenate(opt_dists_list, axis=0).astype(np.float32)
 
         # Set proper datatypes
         map_designs = map_designs.astype(np.float32)
