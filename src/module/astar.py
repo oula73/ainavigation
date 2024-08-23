@@ -82,7 +82,7 @@ class VanillaAstar(nn.Module):
         map_designs: torch.tensor,
         start_maps: torch.tensor,
         goal_maps: torch.tensor,
-        heuristic_maps: torch.tensor,
+        heuristic_maps: torch.tensor = None,
         store_intermediate_results: bool = False,
     ) -> AstarOutput:
         """
@@ -100,6 +100,8 @@ class VanillaAstar(nn.Module):
 
         cost_maps = map_designs
         obstacles_maps = map_designs
+        if heuristic_maps is None:
+            heuristic_maps = torch.zeros_like(map_designs)
 
         return self.perform_astar(
             cost_maps,
