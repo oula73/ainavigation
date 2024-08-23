@@ -44,8 +44,11 @@ def generate_2d_gaussian(
     pos[:, :, 0] = x
     pos[:, :, 1] = y
     z = multivariate_normal.pdf(pos, mean, cov)
-    z[z < 0.05] = 0
-    return z
+    if size == 9:
+        z[z < 0.061] = 0
+    elif size == 5:
+        z[z < 0.091] = 0
+    return z * 100
 
 
 def extract_policy(maze: np.ndarray, mechanism: Mechanism,
@@ -103,8 +106,11 @@ def load_maze_from_directory(input_path: str, split: str,
     assert split in ["train", "validation", "test"]
 
     mazes = []
-    image_paths = natsorted(glob.glob(os.path.join(input_path, split,
+    image_paths_png = natsorted(glob.glob(os.path.join(input_path, split,
                                                    "*.png")))
+    image_paths_jpg = natsorted(glob.glob(os.path.join(input_path, split,
+                                                   "*.jpg")))
+    image_paths = image_paths_png + image_paths_jpg
     for image_path in image_paths:
         image = np.asarray(
             Image.open(image_path).convert("L").resize((size, size)),
@@ -173,29 +179,48 @@ def get_goalMaps_threatMaps_optPolicies_optDists(
             none_zeros = np.nonzero(maze > 0.5)
 
         none_zeros = [(k, j) for k, j in zip(none_zeros[0], none_zeros[1])]
-        goal_pos, bot_pos = random.sample(none_zeros, 2)
+        bot_num = random.randint(1, 3)
+        pawn_num = random.randint(2, 4)
+        pos = random.sample(none_zeros, 1 + bot_num + pawn_num)
+        goal_pos = pos[0]
+        bots_pos = pos[1: bot_num + 1]
+        pawns_pos = pos[bot_num + 1:]
         goal_orient = np.random.randint(mechanism.num_orient)
         goal_loc = (goal_orient, goal_pos[0], goal_pos[1])
-        bot_loc = (goal_orient, bot_pos[0], bot_pos[1])
 
         # update the threaten map
-        gaussian_matrix = generate_2d_gaussian(threaten_size, threaten_mean, threaten_cov) * 100
-        half_size = threaten_size // 2
-        idx1 = max(0, bot_pos[0] - half_size)
-        idx2 = min(maze_size - 1, bot_pos[0] + half_size) + 1
-        idx3 = max(0, bot_pos[1] - half_size)
-        idx4 = min(maze_size - 1, bot_pos[1] + half_size) + 1
-        mat_idx1 = half_size - bot_pos[0] + idx1
-        mat_idx2 = half_size - bot_pos[0] + idx2
-        mat_idx3 = half_size - bot_pos[1] + idx3
-        mat_idx4 = half_size - bot_pos[1] + idx4
-        threaten_maps[i][bot_loc[0]][idx1 : idx2, idx3 : idx4] += gaussian_matrix[mat_idx1 : mat_idx2, mat_idx3 : mat_idx4]
+        gaussian_matrix_bot = generate_2d_gaussian(threaten_size, threaten_mean, [[2,0],[0,2]]) * 2
+        gaussian_matrix_pawn = generate_2d_gaussian(5, [0, 0], [[1, 0], [0, 1]]) * 0.5
+        half_size_bot = threaten_size // 2
+        half_size_pawn = 2
+        bot_num = random.randint(2, 4)
+        for bot_pos in bots_pos:
+            idx1 = max(0, bot_pos[0] - half_size_bot)
+            idx2 = min(maze_size - 1, bot_pos[0] + half_size_bot) + 1
+            idx3 = max(0, bot_pos[1] - half_size_bot)
+            idx4 = min(maze_size - 1, bot_pos[1] + half_size_bot) + 1
+            mat_idx1 = half_size_bot - bot_pos[0] + idx1
+            mat_idx2 = half_size_bot - bot_pos[0] + idx2
+            mat_idx3 = half_size_bot - bot_pos[1] + idx3
+            mat_idx4 = half_size_bot - bot_pos[1] + idx4
+            threaten_maps[i][0][idx1 : idx2, idx3 : idx4] += gaussian_matrix_bot[mat_idx1 : mat_idx2, mat_idx3 : mat_idx4]
+        
+        for pawn_pos in pawns_pos:
+            idx1 = max(0, pawn_pos[0] - half_size_pawn)
+            idx2 = min(maze_size - 1, pawn_pos[0] + half_size_pawn) + 1
+            idx3 = max(0, pawn_pos[1] - half_size_pawn)
+            idx4 = min(maze_size - 1, pawn_pos[1] + half_size_pawn) + 1
+            mat_idx1 = half_size_pawn - pawn_pos[0] + idx1
+            mat_idx2 = half_size_pawn - pawn_pos[0] + idx2
+            mat_idx3 = half_size_pawn - pawn_pos[1] + idx3
+            mat_idx4 = half_size_pawn - pawn_pos[1] + idx4
+            threaten_maps[i][0][idx1 : idx2, idx3 : idx4] += gaussian_matrix_pawn[mat_idx1 : mat_idx2, mat_idx3 : mat_idx4]
 
         # update the goal map
         goal_maps[i, goal_loc[0], goal_loc[1], goal_loc[2]] = 1.0
 
         # Use Dijkstra's to construct the optimal policy
-        opt_value = dijkstra_dist(maze, mechanism, goal_loc, threaten_maps[i][bot_loc[0]])
+        opt_value = dijkstra_dist(maze, mechanism, goal_loc, threaten_maps[i][0])
         opt_policy = extract_policy(maze, mechanism, opt_value)
 
         opt_policies[i, :, :, :, :] = opt_policy
