@@ -20,6 +20,7 @@ class AstarOutput(NamedTuple):
 
     histories: torch.tensor
     paths: torch.tensor
+    next_locs: torch.tensor
     intermediate_results: Optional[List[dict]] = None
 
 def get_delta_g(cost_maps: torch.tensor, choice: str = "net-output") -> torch.tensor:
@@ -130,7 +131,7 @@ def backtrack(
     goal_maps: torch.tensor,
     parents: torch.tensor,
     current_t: int,
-) -> torch.tensor:
+) -> tuple[torch.tensor, torch.tensor]:
     """
     Backtrack the search results to obtain paths
 
@@ -146,15 +147,19 @@ def backtrack(
 
     num_samples = start_maps.shape[0]
     parents = parents.type(torch.long)
+    children = torch.zeros_like(start_maps, dtype=torch.long)
     goal_maps = goal_maps.type(torch.long)
     start_maps = start_maps.type(torch.long)
     path_maps = goal_maps.type(torch.long)
     num_samples = len(parents)
     loc = (parents * goal_maps.view(num_samples, -1)).sum(-1)
+    pre_loc = torch.nonzero(goal_maps.view(num_samples, -1))[:, 1]
     for _ in range(current_t):
         path_maps.view(num_samples, -1)[range(num_samples), loc] = 1
+        children.view(num_samples, -1)[range(num_samples), loc] = pre_loc
+        pre_loc = loc
         loc = parents[range(num_samples), loc]
-    return path_maps
+    return (path_maps, children)
 
 
 class DifferentiableAstar(nn.Module):
@@ -212,11 +217,13 @@ class DifferentiableAstar(nn.Module):
         assert cost_maps.ndim == 4
         assert start_maps.ndim == 4
         assert goal_maps.ndim == 4
+        assert heuristic_maps.ndim == 4
         assert obstacles_maps.ndim == 4
 
         cost_maps = cost_maps[:, 0]
         start_maps = start_maps[:, 0]
         goal_maps = goal_maps[:, 0]
+        heuristic_maps = heuristic_maps[:, 0]
         obstacles_maps = obstacles_maps[:, 0]
 
         num_samples = start_maps.shape[0]
@@ -292,7 +299,7 @@ class DifferentiableAstar(nn.Module):
                 break
 
         # backtracking
-        path_maps = backtrack(start_maps, goal_maps, parents, t)
+        path_maps, children = backtrack(start_maps, goal_maps, parents, t)
 
         if store_intermediate_results:
             intermediate_results.append(
@@ -303,5 +310,5 @@ class DifferentiableAstar(nn.Module):
             )
 
         return AstarOutput(
-            histories.unsqueeze(1), path_maps.unsqueeze(1), intermediate_results
+            histories.unsqueeze(1), path_maps.unsqueeze(1), children.view(num_samples, 1, size, size), intermediate_results
         )
