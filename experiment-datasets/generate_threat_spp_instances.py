@@ -18,8 +18,8 @@ from data import load_maze_from_directory, get_goalMaps_threatMaps_optPolicies_o
 from mechanism import get_mechanism
 
 
-def generate_data(input_path, train_size, valid_size, test_size, mechanism,
-                  maze_size, edge_size, tile_size, output_filename):
+def generate_data(input_path, train_size, valid_size, test_size, train_num, valid_num, test_num,
+                  mechanism, maze_size, edge_size, tile_size, output_filename):
     mazes = [[] for _ in range(3)]
     goal = [[] for _ in range(3)]
     threaten = [[] for _ in range(3)]
@@ -29,6 +29,12 @@ def generate_data(input_path, train_size, valid_size, test_size, mechanism,
             zip(["train", "validation", "test"],
                 [train_size, valid_size, test_size])):
         tmp = load_maze_from_directory(input_path, split, maze_size)
+        if split == "train" and train_num > 1:
+            tmp = np.tile(tmp[0], (train_num, 1, 1))
+        elif split == "validation" and valid_num > 1:
+            tmp = np.tile(tmp[0], (valid_num, 1, 1))
+        elif split == "test" and test_num > 1:
+            tmp = np.tile(tmp[0], (test_num, 1, 1))
         if tile_size == 1:
             mazes[i] = tmp
         else:
@@ -110,6 +116,18 @@ def main():
                         type=int,
                         default=1,
                         help="Tiling maps (experimental).")
+    parser.add_argument("--train-num",
+                        type=int,
+                        default=1,
+                        help="Number of training set repetitions")
+    parser.add_argument("--valid-num",
+                        type=int,
+                        default=1,
+                        help="Number of validation set repetitions")
+    parser.add_argument("--test-num",
+                        type=int,
+                        default=1,
+                        help="Number of test set repetitions")
 
     args = parser.parse_args()
 
@@ -130,6 +148,9 @@ def main():
     train_size = args.train_size
     valid_size = args.valid_size
     test_size = args.test_size
+    train_num = args.train_num
+    valid_num = args.valid_num
+    test_num = args.test_num
     output_filename = os.path.join(
         args.output_path,
         "{}_{:03d}_{}_c{}.npz".format(maze_name, maze_size * tile_size,
@@ -143,6 +164,9 @@ def main():
         train_size,
         valid_size,
         test_size,
+        train_num,
+        valid_num,
+        test_num,
         mechanism,
         maze_size,
         edge_size,
