@@ -1,0 +1,1 @@
+python generate_threat_spp_instances.py --input-path data/origin/sulaman --output-path data/slm_with_threat/ --maze-size 128 --mechanism moore --train-num 3200 --valid-num 400 --test-num 400
