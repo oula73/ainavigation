@@ -28,6 +28,8 @@ def main(config):
         encoder_input=config.encoder.input,
         encoder_arch=config.encoder.arch,
         encoder_depth=config.encoder.depth,
+        g_choice=config.astar.g_choice,
+        h_choice=config.astar.h_choice,
         learn_obstacles=False,
         Tmax=config.Tmax,
     )
@@ -36,7 +38,7 @@ def main(config):
     )
 
     module = PlannerModule(neural_astar, config)
-    logdir = f"{config.logdir}/{os.path.basename(config.dataset)}"
+    logdir = f"{config.logdir}/{os.path.basename(config.dataset).replace("*", "all_data")}"
     trainer = pl.Trainer(
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         log_every_n_steps=1,
