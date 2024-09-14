@@ -1,0 +1,19 @@
+seed: 1234
+dataset: "planning-datasets/data/mpd/*"
+logdir: "model"
+Tmax: 0.25
+
+encoder:
+  input: "m+"
+  arch: "UnetD"
+  depth: 4
+
+params:
+  batch_size: 256
+  num_epochs: 50
+  lr: 0.00005
+
+
+hydra:
+  job:
+    chdir: False
