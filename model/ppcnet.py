@@ -62,7 +62,6 @@ class PPCNet(nn.Module):
         self.sigm = nn.Sigmoid()
         n_channels = [64 * (2 ** i) for i in range(n_layers)]
         self.conv_down = nn.ModuleList([_conv_block(c if i > 0 else 3, c) for i, c in enumerate(n_channels)])
-        self.conv_up = nn.ModuleList([_conv_block(2 * c, 2 * c, transpose=True, last_output_padding=1 if i == len(n_channels) - 1 else 0) for i, c in enumerate(n_channels[::-1])])
         self.bottleneck = nn.Conv2d(64, 1, 3, padding=1)
         self.conv_out = nn.Conv2d(1, 1, kernel_size=3, padding=1)
 

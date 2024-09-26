@@ -1,4 +1,4 @@
-from dataloader.dataloader import get_dataLoader
+from dataloader.dataloader import get_dataLoader, set_global_seed
 from model.ppcnet import PPCNet
 from configuration import config
 from model.loss import MSEMapLoss
@@ -107,6 +107,7 @@ def train(model, train_dataloader, loss_function, optimizer, epochs, device,
 
 
 if __name__ == "__main__":
+    set_global_seed()
     SummaryLogger.init()
 
     model = PPCNet(gaussian_blur_kernel=config.gaussian_blur_kernel).to(config.device)
